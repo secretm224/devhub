@@ -1,13 +1,16 @@
 package com.secretminc.devhub.api.blogs;
 
 
+import com.secretminc.devhub.api.blogs.dto.BlogCreateRequest;
+import com.secretminc.devhub.api.blogs.dto.BlogResponse;
+import com.secretminc.devhub.api.blogs.dto.BlogUpdateRequest;
+import com.secretminc.devhub.application.blogs.BlogService;
 import com.secretminc.devhub.domain.blogs.Blog;
 import com.secretminc.devhub.domain.blogs.BlogRepository;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
@@ -17,6 +20,7 @@ import java.util.List;
 public class BlogController {
 
     private final BlogRepository blogRepository;
+    private final BlogService blogService;
 
     @GetMapping
     public List<Blog> getBlogs(){
@@ -32,4 +36,18 @@ public class BlogController {
     public Blog getBlog(@PathVariable String blogId){
         return blogRepository.findById(blogId).orElseThrow(() -> new IllegalArgumentException("Blog not found"));
     }
+
+    @PostMapping
+    public BlogResponse createBlog(
+            @Valid @RequestBody BlogCreateRequest request
+    ) {
+        return blogService.create(request);
+    }
+
+    @PutMapping("/{blogId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void updateBlog(@PathVariable String blogId, @Valid @RequestBody BlogUpdateRequest request){
+         blogService.update(blogId,request);
+    }
+
 }

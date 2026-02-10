@@ -49,4 +49,18 @@ public class Blog {
     @Column(name="created_at")
     private LocalDate createdAt;
 
+
+    public Blog(String blogId, String blogName, String blogUrl, String description) {
+        this.blogId = blogId;
+        this.blogName = blogName;
+        this.blogUrl = blogUrl;
+        this.description = description;
+    }
+
+    public void update(String blogName, String blogUrl, String description) {
+        this.blogName = blogName;
+        this.blogUrl = blogUrl;
+        this.description = description;
+    }
+
 }
