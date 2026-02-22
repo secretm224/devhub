@@ -15,6 +15,7 @@ class DevhubApplicationTests {
 	private BlogMapper blogMapper;
 
 
+
 	@Test
 	void contextLoads() {
 	}
