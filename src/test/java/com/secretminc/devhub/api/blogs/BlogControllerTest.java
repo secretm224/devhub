@@ -5,8 +5,8 @@ import com.secretminc.devhub.api.blogs.dto.BlogCreateRequest;
 import com.secretminc.devhub.api.blogs.dto.BlogResponse;
 import com.secretminc.devhub.api.blogs.dto.BlogUpdateRequest;
 import com.secretminc.devhub.application.blogs.BlogService;
-import com.secretminc.devhub.domain.blogs.Blog;
-import com.secretminc.devhub.domain.blogs.BlogRepository;
+import com.secretminc.devhub.exception.BlogNotFoundException;
+import com.secretminc.devhub.exception.GlobalExceptionHandler;
 import com.secretminc.devhub.fixture.BlogFixture;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -20,10 +20,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
-import java.util.Optional;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -40,9 +39,6 @@ class BlogControllerTest {
     private ObjectMapper objectMapper;
 
     @Mock
-    private BlogRepository blogRepository;
-
-    @Mock
     private BlogService blogService;
 
     @InjectMocks
@@ -50,7 +46,9 @@ class BlogControllerTest {
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(blogController).build();
+        mockMvc = MockMvcBuilders.standaloneSetup(blogController)
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
         objectMapper = new ObjectMapper();
     }
 
@@ -58,11 +56,11 @@ class BlogControllerTest {
     @DisplayName("GET /api/blogs - 모든 블로그 조회 성공")
     void getBlogs_Success() throws Exception {
         // given
-        List<Blog> blogs = Arrays.asList(
-                BlogFixture.createDefaultBlog(),
-                BlogFixture.createBlog("blog-2", "블로그2", "https://blog2.com", "설명2")
+        List<BlogResponse> blogs = Arrays.asList(
+                new BlogResponse(BlogFixture.createDefaultBlog()),
+                new BlogResponse(BlogFixture.createBlog("blog-2", "블로그2", "https://blog2.com", "설명2"))
         );
-        when(blogRepository.findAll()).thenReturn(blogs);
+        when(blogService.getAllBlogs()).thenReturn(blogs);
 
         // when & then
         mockMvc.perform(get("/api/blogs"))
@@ -74,18 +72,18 @@ class BlogControllerTest {
                 .andExpect(jsonPath("$[0].blogName").value("테스트 블로그"))
                 .andExpect(jsonPath("$[1].blogId").value("blog-2"));
 
-        verify(blogRepository, times(1)).findAll();
+        verify(blogService, times(1)).getAllBlogs();
     }
 
     @Test
     @DisplayName("GET /api/blogs/active - 활성 블로그만 조회 성공")
     void getActiveBlogs_Success() throws Exception {
         // given
-        List<Blog> activeBlogs = Arrays.asList(
-                BlogFixture.createActiveBlog(),
-                BlogFixture.createActiveBlog()
+        List<BlogResponse> activeBlogs = Arrays.asList(
+                new BlogResponse(BlogFixture.createActiveBlog()),
+                new BlogResponse(BlogFixture.createActiveBlog())
         );
-        when(blogRepository.findByIsActive(true)).thenReturn(activeBlogs);
+        when(blogService.getActiveBlogs()).thenReturn(activeBlogs);
 
         // when & then
         mockMvc.perform(get("/api/blogs/active"))
@@ -94,15 +92,15 @@ class BlogControllerTest {
                 .andExpect(jsonPath("$").isArray())
                 .andExpect(jsonPath("$.length()").value(2));
 
-        verify(blogRepository, times(1)).findByIsActive(true);
+        verify(blogService, times(1)).getActiveBlogs();
     }
 
     @Test
     @DisplayName("GET /api/blogs/{blogId} - 특정 블로그 조회 성공")
     void getBlog_Success() throws Exception {
         // given
-        Blog blog = BlogFixture.createDefaultBlog();
-        when(blogRepository.findById("test-blog-1")).thenReturn(Optional.of(blog));
+        BlogResponse response = new BlogResponse(BlogFixture.createDefaultBlog());
+        when(blogService.getBlog("test-blog-1")).thenReturn(response);
 
         // when & then
         mockMvc.perform(get("/api/blogs/test-blog-1"))
@@ -112,25 +110,21 @@ class BlogControllerTest {
                 .andExpect(jsonPath("$.blogName").value("테스트 블로그"))
                 .andExpect(jsonPath("$.blogUrl").value("https://test-blog.com"));
 
-        verify(blogRepository, times(1)).findById("test-blog-1");
+        verify(blogService, times(1)).getBlog("test-blog-1");
     }
 
     @Test
-    @DisplayName("GET /api/blogs/{blogId} - 존재하지 않는 블로그 조회 시 예외 발생")
-    void getBlog_NotFound_ThrowsException() throws Exception {
+    @DisplayName("GET /api/blogs/{blogId} - 존재하지 않는 블로그 조회 시 404 반환")
+    void getBlog_NotFound_Returns404() throws Exception {
         // given
-        when(blogRepository.findById("non-existent-id")).thenReturn(Optional.empty());
+        when(blogService.getBlog("non-existent-id")).thenThrow(new BlogNotFoundException("non-existent-id"));
 
         // when & then
-        try {
-            mockMvc.perform(get("/api/blogs/non-existent-id"))
-                    .andDo(print());
-        } catch (Exception e) {
-            // IllegalArgumentException이 발생해야 함
-            assertThat(e.getCause()).isInstanceOf(IllegalArgumentException.class);
-        }
+        mockMvc.perform(get("/api/blogs/non-existent-id"))
+                .andDo(print())
+                .andExpect(status().isNotFound());
 
-        verify(blogRepository, times(1)).findById("non-existent-id");
+        verify(blogService, times(1)).getBlog("non-existent-id");
     }
 
     @Test
@@ -138,9 +132,7 @@ class BlogControllerTest {
     void createBlog_Success() throws Exception {
         // given
         BlogCreateRequest request = BlogFixture.createBlogCreateRequest();
-        Blog createdBlog = request.toEntity();
-        BlogResponse response = new BlogResponse(createdBlog);
-
+        BlogResponse response = new BlogResponse(request.toEntity());
         when(blogService.create(any(BlogCreateRequest.class))).thenReturn(response);
 
         // when & then
@@ -177,7 +169,6 @@ class BlogControllerTest {
     void createBlog_ValidationFails_WhenDescriptionTooLong() throws Exception {
         // given
         BlogCreateRequest request = BlogFixture.createBlogCreateRequest();
-        // 리플렉션으로 description을 500자 초과로 설정
         String longDescription = "a".repeat(501);
         var field = request.getClass().getDeclaredField("description");
         field.setAccessible(true);
@@ -212,25 +203,20 @@ class BlogControllerTest {
     }
 
     @Test
-    @DisplayName("PUT /api/blogs/{blogId} - 존재하지 않는 블로그 수정 시 예외 발생")
-    void updateBlog_NotFound_ThrowsException() throws Exception {
+    @DisplayName("PUT /api/blogs/{blogId} - 존재하지 않는 블로그 수정 시 404 반환")
+    void updateBlog_NotFound_Returns404() throws Exception {
         // given
         String nonExistentId = "non-existent-id";
         BlogUpdateRequest request = BlogFixture.createBlogUpdateRequest();
-
-        doThrow(new IllegalArgumentException("blog not found"))
+        doThrow(new BlogNotFoundException(nonExistentId))
                 .when(blogService).update(eq(nonExistentId), any(BlogUpdateRequest.class));
 
         // when & then
-        try {
-            mockMvc.perform(put("/api/blogs/" + nonExistentId)
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(objectMapper.writeValueAsString(request)))
-                    .andDo(print());
-        } catch (Exception e) {
-            // IllegalArgumentException이 발생해야 함
-            assertThat(e.getCause()).isInstanceOf(IllegalArgumentException.class);
-        }
+        mockMvc.perform(put("/api/blogs/" + nonExistentId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andDo(print())
+                .andExpect(status().isNotFound());
 
         verify(blogService, times(1)).update(eq(nonExistentId), any(BlogUpdateRequest.class));
     }
@@ -239,7 +225,7 @@ class BlogControllerTest {
     @DisplayName("GET /api/blogs - 빈 리스트 반환")
     void getBlogs_ReturnsEmptyList() throws Exception {
         // given
-        when(blogRepository.findAll()).thenReturn(Arrays.asList());
+        when(blogService.getAllBlogs()).thenReturn(Collections.emptyList());
 
         // when & then
         mockMvc.perform(get("/api/blogs"))
@@ -248,6 +234,6 @@ class BlogControllerTest {
                 .andExpect(jsonPath("$").isArray())
                 .andExpect(jsonPath("$.length()").value(0));
 
-        verify(blogRepository, times(1)).findAll();
+        verify(blogService, times(1)).getAllBlogs();
     }
 }
